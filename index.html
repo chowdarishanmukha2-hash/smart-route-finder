@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Route Engine</title>
+<style>
+:root{--bg:#eef2f0;--panel:#fff;--ink:#12262b;--mute:#5b6e72;--line:#cdd8d6;--best:#0a7c74;--alt:#b9892b;--road:#c3d0cd;--ok:#e3f1ef;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f1b1e;--panel:#172629;--ink:#e6f0ee;--mute:#92a8a8;--line:#2a3f42;--best:#3fc7bb;--alt:#e0b04e;--road:#2f4549;--ok:#1c3a3a}}
+:root[data-theme="dark"]{--bg:#0f1b1e;--panel:#172629;--ink:#e6f0ee;--mute:#92a8a8;--line:#2a3f42;--best:#3fc7bb;--alt:#e0b04e;--road:#2f4549;--ok:#1c3a3a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"IBM Plex Sans",system-ui,sans-serif;line-height:1.5}
+h1,h2,h3{font-family:"Fraunces",Georgia,serif;font-weight:600;margin:0}
+header{padding:20px 20px 4px;max-width:1100px;margin:auto}
+h1{font-size:1.9rem}header p{margin:4px 0 0;color:var(--mute);max-width:60ch}
+main{max-width:1100px;margin:auto;padding:12px 20px 40px;display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:16px}
+@media(max-width:820px){main{grid-template-columns:1fr}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px}
+.ctrl{display:grid;grid-template-columns:1fr 1fr;gap:10px 14px}
+label{font-size:.82rem;color:var(--mute);display:block}
+select,input[type=range]{width:100%}
+select{padding:7px;border-radius:6px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font:inherit}
+output{color:var(--ink);font-weight:600}
+svg{width:100%;height:auto;display:block}
+.road{stroke:var(--road);stroke-width:2;fill:none}
+.rt{fill:none;stroke-linecap:round;stroke-linejoin:round}
+.city{fill:var(--panel);stroke:var(--ink);stroke-width:1.5}
+.city.on{fill:var(--best);stroke:var(--best)}
+text{fill:var(--ink);font-size:11px;font-family:inherit}
+.cards{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+.card{border:1px solid var(--line);border-radius:8px;padding:10px;cursor:pointer;background:var(--bg);text-align:left;color:var(--ink);font:inherit;width:100%}
+.card:focus-visible{outline:2px solid var(--best);outline-offset:2px}
+.card.sel{border-color:var(--best);background:var(--ok)}
+.card b{font-size:1.05rem}.tag{font-size:.75rem;background:var(--best);color:#fff;border-radius:4px;padding:1px 6px;margin-left:6px}
+.sub{color:var(--mute);font-size:.83rem}
+.bar{display:flex;height:8px;border-radius:4px;overflow:hidden;margin:6px 0 2px;background:var(--line)}
+.bar i{display:block}.f{background:#6d8fb3}.t{background:var(--best)}.o{background:var(--alt)}
+.leg{font-size:.75rem;color:var(--mute)}.leg span{margin-right:10px}
+ul{padding-left:18px;margin:6px 0}li{margin:4px 0}
+.why h3{margin-bottom:4px}
+.btn{padding:7px 12px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);font:inherit;cursor:pointer}
+.btn:hover{border-color:var(--best)}.btn:focus-visible,summary:focus-visible{outline:2px solid var(--best);outline-offset:2px}
+.edit{margin-top:12px;border-top:1px solid var(--line);padding-top:10px}summary{cursor:pointer;font-weight:600}
+.row{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:6px;margin:8px 0}
+.row input{padding:7px;border-radius:6px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font:inherit;min-width:0}
+</style>
+</head>
+<body>
+<header>
+<h1>Route Engine</h1>
+<p>Compares several paths between two cities, ranks them by true travel cost, and explains why the winner wins. Change the weights and watch the decision flip.</p>
+</header>
+<main>
+<section class="panel">
+ <div class="ctrl">
+  <div><label for="src">From</label><select id="src"></select></div>
+  <div><label for="dst">To</label><select id="dst"></select></div>
+  <div><label for="fuel">Fuel + wear: ₹<output id="fo"></output>/km</label><input id="fuel" type="range" min="2" max="20" step="1" value="8"></div>
+  <div><label for="tv">Value of your time: ₹<output id="to"></output>/hr</label><input id="tv" type="range" min="0" max="800" step="25" value="200"></div>
+  <div><label for="tm">Toll sensitivity: <output id="mo"></output>×</label><input id="tm" type="range" min="0" max="3" step="0.25" value="1"></div>
+  <div><label for="kk">Routes to compare: <output id="ko"></output></label><input id="kk" type="range" min="2" max="6" step="1" value="4"></div>
+ </div>
+ <div style="margin-top:10px"><button class="btn" id="swap">⇄ Swap</button></div>
+ <svg id="map" viewBox="0 0 700 470" role="img" aria-label="Road network map"></svg>
+ <div class="leg"><span style="color:var(--best)">━ selected route</span><span style="color:var(--alt)">┅ alternatives</span></div>
+ <details class="edit"><summary>Edit road network</summary>
+  <p class="sub">Add your own cities and roads. Changes are saved in this browser.</p>
+  <div class="row"><input id="cn" placeholder="City name"><input id="cla" type="number" step="any" placeholder="Latitude"><input id="clo" type="number" step="any" placeholder="Longitude"><button class="btn" id="addc">Add city</button></div>
+  <div class="row"><select id="ra" aria-label="Road from"></select><select id="rb" aria-label="Road to"></select><input id="rk" type="number" min="1" placeholder="km"><input id="rm" type="number" min="1" placeholder="minutes"><input id="rt" type="number" min="0" placeholder="toll ₹"><button class="btn" id="addr">Add / update road</button></div>
+  <button class="btn" id="reset">Reset to sample network</button> <span class="sub" id="msg" role="status"></span>
+ </details>
+</section>
+<section>
+ <div class="panel"><h2 style="font-size:1.2rem">Routes ranked by cost</h2><div class="cards" id="cards"></div>
+ <div class="leg" style="margin-top:8px"><span style="color:#6d8fb3">■ fuel</span><span style="color:var(--best)">■ time</span><span style="color:var(--alt)">■ tolls</span></div></div>
+ <div class="panel why" id="why" style="margin-top:16px" aria-live="polite"></div>
+</section>
+</main>
+<script>
+// ---------- DATA: cities (lon,lat) and roads (km, minutes, toll ₹) ----------
+const CITIES={Hyderabad:[78.5,17.4],Warangal:[79.6,18.0],Vijayawada:[80.6,16.5],Nagpur:[79.1,21.1],Kurnool:[78.0,15.8],
+Bengaluru:[77.6,13.0],Chennai:[80.3,13.1],Visakhapatnam:[83.3,17.7],Tirupati:[79.4,13.6]};
+const ROADS=[["Hyderabad","Warangal",150,165,120],["Hyderabad","Vijayawada",270,270,290],["Hyderabad","Nagpur",500,480,450],
+["Hyderabad","Kurnool",215,195,180],["Hyderabad","Bengaluru",570,530,520],["Warangal","Vijayawada",235,250,150],
+["Warangal","Visakhapatnam",430,460,300],["Warangal","Nagpur",330,360,200],["Vijayawada","Visakhapatnam",350,360,260],
+["Vijayawada","Chennai",450,450,380],["Vijayawada","Tirupati",390,400,250],["Kurnool","Bengaluru",360,390,250],
+["Kurnool","Tirupati",340,380,150],["Bengaluru","Chennai",345,330,270],["Bengaluru","Tirupati",250,260,100],["Tirupati","Chennai",135,150,80]];
+
+const DEF=JSON.stringify({c:CITIES,r:ROADS});
+function setNet(n){Object.keys(CITIES).forEach(k=>delete CITIES[k]);Object.assign(CITIES,n.c);ROADS.splice(0,ROADS.length,...n.r)}
+function save(){try{localStorage.setItem("re_net",JSON.stringify({c:CITIES,r:ROADS}))}catch(e){}}
+try{const s=JSON.parse(localStorage.getItem("re_net"));if(s&&s.c&&s.r)setNet(s)}catch(e){}
+
+// ---------- GRAPH ----------
+let G={},E={};
+const key=(a,b)=>a<b?a+"|"+b:b+"|"+a;
+function rebuild(){G={};E={};Object.keys(CITIES).forEach(c=>G[c]=[]);
+ ROADS.forEach(([a,b,km,min,toll])=>{E[key(a,b)]={km,min,toll};G[a].push(b);G[b].push(a)})}
+rebuild();
+
+// ---------- COST MODEL: one number that mixes fuel, time and tolls ----------
+const P={fuel:8,tv:200,tm:1};
+function parts(a,b){const e=E[key(a,b)];return{fuel:e.km*P.fuel,time:e.min/60*P.tv,toll:e.toll*P.tm,km:e.km,min:e.min,rawToll:e.toll}}
+const edgeCost=(a,b)=>{const p=parts(a,b);return p.fuel+p.time+p.toll};
+
+// ---------- DIJKSTRA (with banned nodes/edges so Yen's algorithm can reuse it) ----------
+function dijkstra(src,dst,bn=new Set(),be=new Set()){
+ const dist={},prev={},done=new Set();Object.keys(G).forEach(c=>dist[c]=Infinity);dist[src]=0;
+ while(true){
+  let u=null;for(const c in dist)if(!done.has(c)&&!bn.has(c)&&dist[c]<Infinity&&(u===null||dist[c]<dist[u]))u=c;
+  if(u===null)return null;if(u===dst)break;done.add(u);
+  for(const v of G[u]){if(bn.has(v)||be.has(key(u,v)))continue;const d=dist[u]+edgeCost(u,v);if(d<dist[v]){dist[v]=d;prev[v]=u}}
+ }
+ const path=[dst];while(path[0]!==src)path.unshift(prev[path[0]]);return path;
+}
+// ---------- YEN'S K-SHORTEST LOOPLESS PATHS ----------
+function yen(src,dst,K){
+ const first=dijkstra(src,dst);if(!first)return[];
+ const A=[first],B=[];
+ for(let k=1;k<K;k++){
+  const last=A[k-1];
+  for(let i=0;i<last.length-1;i++){
+   const spur=last[i],root=last.slice(0,i+1),be=new Set(),bn=new Set(root.slice(0,-1));
+   A.forEach(p=>{if(p.length>i+1&&root.every((n,j)=>p[j]===n))be.add(key(p[i],p[i+1]))});
+   const sp=dijkstra(spur,dst,bn,be);
+   if(sp){const cand=root.slice(0,-1).concat(sp);if(!B.some(p=>p.join()===cand.join())&&!A.some(p=>p.join()===cand.join()))B.push(cand)}
+  }
+  if(!B.length)break;
+  B.sort((x,y)=>pathStats(x).total-pathStats(y).total);A.push(B.shift());
+ }
+ return A;
+}
+function pathStats(path){
+ const s={fuel:0,time:0,toll:0,km:0,min:0,rawToll:0};
+ for(let i=0;i<path.length-1;i++){const p=parts(path[i],path[i+1]);for(const k in s)s[k]+=p[k]}
+ s.total=s.fuel+s.time+s.toll;s.path=path;return s;
+}
+
+// ---------- UI ----------
+const $=id=>document.getElementById(id);
+const fmtT=m=>Math.floor(m/60)+"h "+String(Math.round(m%60)).padStart(2,"0")+"m";
+const inr=n=>"₹"+Math.round(n).toLocaleString("en-IN");
+let names=[],BB;
+function layout(){names=Object.keys(CITIES);const v=Object.values(CITIES);
+ BB={a:Math.min(...v.map(p=>p[0])),b:Math.max(...v.map(p=>p[0])),c:Math.min(...v.map(p=>p[1])),d:Math.max(...v.map(p=>p[1]))}}
+const X=c=>40+(CITIES[c][0]-BB.a)/((BB.b-BB.a)||1)*540,Y=c=>30+(BB.d-CITIES[c][1])/((BB.d-BB.c)||1)*400;
+function fill(s0,d0){layout();const o=names.map(n=>`<option>${n}</option>`).join("");
+ ["src","dst","ra","rb"].forEach(id=>$(id).innerHTML=o);
+ $("src").value=names.includes(s0)?s0:names[0];$("dst").value=names.includes(d0)?d0:names[names.length-1]}
+let routes=[],sel=0;
+
+function run(){
+ layout();
+ P.fuel=+$("fuel").value;P.tv=+$("tv").value;P.tm=+$("tm").value;
+ $("fo").textContent=P.fuel;$("to").textContent=P.tv;$("mo").textContent=P.tm;$("ko").textContent=$("kk").value;
+ const s=$("src").value,d=$("dst").value;
+ if(s===d){$("cards").innerHTML="";$("why").innerHTML="<p class='sub'>Pick two different cities.</p>";drawMap();return}
+ routes=yen(s,d,+$("kk").value).map(pathStats);sel=0;render();
+}
+function render(){drawMap();drawCards();explain()}
+
+function drawMap(){
+ let h=ROADS.map(([a,b])=>`<line class="road" x1="${X(a)}" y1="${Y(a)}" x2="${X(b)}" y2="${Y(b)}"/>`).join("");
+ const on=new Set(routes[sel]?routes[sel].path:[]);
+ routes.map((r,i)=>[r,i]).sort((a,b)=>(a[1]===sel)-(b[1]===sel)).forEach(([r,i])=>{
+  const pts=r.path.map(c=>X(c)+","+Y(c)).join(" ");
+  h+=i===sel?`<polyline class="rt" points="${pts}" stroke="var(--best)" stroke-width="5"/>`
+            :`<polyline class="rt" points="${pts}" stroke="var(--alt)" stroke-width="2.5" stroke-dasharray="6 6" opacity=".8"/>`});
+ for(const c of names)h+=`<circle class="city ${on.has(c)?"on":""}" cx="${X(c)}" cy="${Y(c)}" r="6"/><text x="${X(c)+9}" y="${Y(c)+4}">${c}</text>`;
+ $("map").innerHTML=h;
+}
+function drawCards(){
+ $("cards").innerHTML=routes.map((r,i)=>{
+  const t=r.total;
+  return `<button class="card ${i===sel?"sel":""}" data-i="${i}"><b>${r.path.join(" → ")}</b>${i===0?'<span class="tag">optimal</span>':""}
+  <div class="sub">${r.km} km · ${fmtT(r.min)} · tolls ${inr(r.rawToll)}</div>
+  <div class="bar"><i class="f" style="width:${r.fuel/t*100}%"></i><i class="t" style="width:${r.time/t*100}%"></i><i class="o" style="width:${r.toll/t*100}%"></i></div>
+  <div><b>${inr(t)}</b> <span class="sub">total cost${i?` (+${inr(t-routes[0].total)})`:""}</span></div></button>`}).join("");
+ document.querySelectorAll(".card").forEach(c=>c.onclick=()=>{sel=+c.dataset.i;render()});
+}
+function explain(){
+ if(!routes.length){$("why").innerHTML="<p class='sub'>No route found.</p>";return}
+ const best=routes[0],n=routes.length;
+ const fastest=routes.reduce((a,b)=>b.min<a.min?b:a),shortest=routes.reduce((a,b)=>b.km<a.km?b:a);
+ let li=[`Of <b>${n}</b> loop-free routes evaluated, it has the lowest combined cost: <b>${inr(best.total)}</b> (fuel ${inr(best.fuel)} + time ${inr(best.time)} + tolls ${inr(best.toll)}).`];
+ li.push(fastest===best?"It is also the <b>fastest</b> route, so there is no trade-off to make.":
+  `It is not the fastest: ${fastest.path.join(" → ")} saves ${fmtT(best.min-fastest.min)} but costs ${inr(fastest.total-best.total)} more.`);
+ li.push(shortest===best?"It is also the <b>shortest</b> by distance.":
+  `It is not the shortest: ${shortest.path.join(" → ")} is ${best.km-shortest.km} km shorter but loses on ${shortest.min>best.min?"time":"tolls"}.`);
+ let cmp="";
+ if(n>1){
+  const o=sel>0?routes[sel]:routes[1],dF=o.fuel-best.fuel,dT=o.time-best.time,dO=o.toll-best.toll;
+  const parts=[["fuel",dF],["time",dT],["tolls",dO]].sort((a,b)=>Math.abs(b[1])-Math.abs(a[1]));
+  const drv=parts[0];
+  cmp=`<h3 style="margin-top:12px;font-size:1rem">Versus ${o.path.join(" → ")}</h3><ul>
+  <li>Costs <b>${inr(o.total-best.total)}</b> more overall (${((o.total/best.total-1)*100).toFixed(1)}% higher).</li>
+  <li>Biggest driver: <b>${drv[0]}</b> (${drv[1]>=0?"+":"−"}${inr(Math.abs(drv[1]))} vs the optimal route).</li>
+  <li>Breakdown difference: fuel ${dF>=0?"+":"−"}${inr(Math.abs(dF))}, time ${dT>=0?"+":"−"}${inr(Math.abs(dT))}, tolls ${dO>=0?"+":"−"}${inr(Math.abs(dO))}.</li></ul>`;
+ }
+ li.push("Optimality is guaranteed: costs are non-negative, so Dijkstra finds the cheapest path, and Yen's algorithm lists the next-cheapest ones in order.");
+ $("why").innerHTML=`<h2 style="font-size:1.2rem">Why ${best.path.join(" → ")}?</h2><ul>${li.map(x=>`<li>${x}</li>`).join("")}</ul>${cmp}`;
+}
+["src","dst","fuel","tv","tm","kk"].forEach(id=>$(id).addEventListener("input",run));
+const msg=t=>$("msg").textContent=t;
+function changed(){save();rebuild();fill($("src").value,$("dst").value);run()}
+$("swap").onclick=()=>{const a=$("src").value;$("src").value=$("dst").value;$("dst").value=a;run()};
+$("addc").onclick=()=>{const n=$("cn").value.trim(),la=parseFloat($("cla").value),lo=parseFloat($("clo").value);
+ if(!n||isNaN(la)||isNaN(lo))return msg("Enter a name, latitude and longitude.");
+ if(CITIES[n])return msg(n+" already exists.");
+ CITIES[n]=[lo,la];changed();msg(n+" added. Now connect it with a road.");["cn","cla","clo"].forEach(i=>$(i).value="")};
+$("addr").onclick=()=>{const a=$("ra").value,b=$("rb").value,km=+$("rk").value,mn=+$("rm").value,t=+$("rt").value||0;
+ if(a===b)return msg("Choose two different cities.");
+ if(!(km>0&&mn>0))return msg("Enter distance and minutes above 0.");
+ const i=ROADS.findIndex(r=>key(r[0],r[1])===key(a,b)),row=[a,b,km,mn,t];
+ i>=0?ROADS[i]=row:ROADS.push(row);changed();msg(`Road ${a} – ${b} saved.`)};
+$("reset").onclick=()=>{setNet(JSON.parse(DEF));changed();msg("Sample network restored.")};
+fill("Hyderabad","Chennai");run();
+</script>
+</body>
+</html>
